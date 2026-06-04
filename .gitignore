@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.local
+service-account.json
+*.pem
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Logs / coverage
+*.log
+.coverage
+htmlcov/
+.pytest_cache/

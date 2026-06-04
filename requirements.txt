@@ -1,0 +1,31 @@
+# ── Web framework ──────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-multipart==0.0.20
+sse-starlette==2.2.1
+
+# ── Database (MongoDB Atlas) ───────────────────────────────────
+motor==3.6.0
+pymongo==4.9.2
+
+# ── Cache / event bus (Redis) ──────────────────────────────────
+redis==5.2.1
+
+# ── Google AI / Gemini ─────────────────────────────────────────
+google-generativeai==0.8.3
+google-cloud-aiplatform==1.75.0
+
+# ── Google Cloud Agent Builder (Dialogflow CX runtime) ─────────
+google-cloud-dialogflow-cx==1.39.0
+
+# ── Dynatrace MCP / HTTP ───────────────────────────────────────
+httpx==0.28.1
+mcp==1.2.0
+
+# ── Utilities ──────────────────────────────────────────────────
+python-dotenv==1.0.1
+tiktoken==0.8.0
+tenacity==9.0.0
+orjson==3.10.13
