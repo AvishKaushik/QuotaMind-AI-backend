@@ -16,7 +16,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api import router_agent, router_events, router_metrics, router_requests
-from config.env import get_env, get_list_env
+from config.env import get_env
+from config.settings import settings
 from integrations import cache, db
 
 logging.basicConfig(
