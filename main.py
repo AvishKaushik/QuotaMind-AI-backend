@@ -14,7 +14,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config.settings import settings
+from api import router_requests # include everything later
+from config.env import get_list_env
 from integrations import cache, db
 
 
@@ -33,7 +34,7 @@ app = FastAPI(title="QuotaMind AI", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=get_list_env("CORS_ORIGINS", "http://localhost:3000"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,6 +57,9 @@ async def health() -> dict:
         status["redis"] = f"error: {type(e).__name__}"
     return status
 
+
+# ── Lane routers ──────────────────────────────────────────────────
+app.include_router(router_requests.router)
 
 # ── Lane routers — uncomment each as it lands ──────────────────────
 # from api import (
