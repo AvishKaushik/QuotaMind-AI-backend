@@ -14,7 +14,7 @@ from motor.motor_asyncio import (
     AsyncIOMotorDatabase,
 )
 
-from config.env import get_env
+from config.settings import settings
 
 # Collection names — single source of truth for both lanes.
 COLLECTION_AI_REQUESTS = "ai_requests"
@@ -31,11 +31,8 @@ async def connect() -> None:
     global _client, _db
     if _client is not None:
         return
-    mongodb_uri = get_env("MONGODB_URI")
-    if not mongodb_uri:
-        raise RuntimeError("MONGODB_URI is missing from .env.")
-    _client = AsyncIOMotorClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-    _db = _client[get_env("MONGODB_DB_NAME", "quotamind")]
+    _client = AsyncIOMotorClient(settings.mongodb_uri, serverSelectionTimeoutMS=5000)
+    _db = _client[settings.mongodb_db_name]
     await _client.admin.command("ping")
     await ensure_indexes()
 

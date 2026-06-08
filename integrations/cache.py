@@ -1,6 +1,6 @@
 """Redis (asyncio) client — lifecycle, KV/counter helpers, and the event bus.
 
-The pub/sub channel (`EVENTS_CHANNEL`) is the ONLY way the two lanes
+The pub/sub channel (`settings.events_channel`) is the ONLY way the two lanes
 talk to each other in real time: optimization engines `publish_event(...)`, and
 the SSE router `subscribe()`s to stream events to the frontend.
 
@@ -18,7 +18,7 @@ from typing import Any, AsyncIterator
 
 import redis.asyncio as redis
 
-from config.env import get_env
+from config.settings import settings
 
 _client: redis.Redis | None = None
 
@@ -28,7 +28,7 @@ async def connect() -> None:
     global _client
     if _client is not None:
         return
-    _client = redis.from_url(get_env("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
+    _client = redis.from_url(settings.redis_url, decode_responses=True)
     await _client.ping()
 
 
@@ -66,12 +66,12 @@ async def increment_counter(key: str, amount: int = 1) -> int:
 # ── Pub/Sub event bus (cross-lane channel) ─────────────────────────
 async def publish_event(event: dict, channel: str | None = None) -> None:
     """Publish a JSON event to the shared channel."""
-    await get_client().publish(channel or get_env("EVENTS_CHANNEL", "quotamind:events"), json.dumps(event))
+    await get_client().publish(channel or settings.events_channel, json.dumps(event))
 
 
 async def subscribe(channel: str | None = None) -> AsyncIterator[dict]:
     """Async-iterate JSON events from the channel. Drives the SSE endpoint."""
-    chan = channel or get_env("EVENTS_CHANNEL", "quotamind:events")
+    chan = channel or settings.events_channel
     pubsub = get_client().pubsub()
     await pubsub.subscribe(chan)
     try:
