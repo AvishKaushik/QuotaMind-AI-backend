@@ -9,14 +9,20 @@ Run locally:
 """
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import router_requests # include everything later
-from config.env import get_list_env
+from api import router_agent, router_events, router_metrics, router_requests
+from config.env import get_env, get_list_env
 from integrations import cache, db
+
+logging.basicConfig(
+    level=get_env("LOG_LEVEL", "INFO").upper(),
+    format="%(levelname)s:%(name)s:%(message)s",
+)
 
 
 @asynccontextmanager
@@ -60,6 +66,9 @@ async def health() -> dict:
 
 # ── Lane routers ──────────────────────────────────────────────────
 app.include_router(router_requests.router)
+app.include_router(router_agent.router)
+app.include_router(router_metrics.router)
+app.include_router(router_events.router)
 
 # ── Lane routers — uncomment each as it lands ──────────────────────
 # from api import (
