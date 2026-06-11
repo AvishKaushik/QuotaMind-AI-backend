@@ -531,6 +531,7 @@ async def _publish_request_event(
         else request_doc.priority.value,
         "category": request_doc.category,
         "cost_usd": request_doc.cost_usd,
+        "total_tokens": request_doc.prompt_tokens + request_doc.completion_tokens,
         "cache_hit": request_doc.cache_hit,
         "prompt_hash": request_doc.prompt_hash,
         "optimizations": optimizations,

@@ -8,10 +8,10 @@ of optimization engines, and drives an autonomous agent (Google Cloud Agent Buil
 + Gemini 2.5) that reroutes, compresses, throttles, and forecasts — all streamed to
 the dashboard in real time over SSE.
 
-> ⚠️ **Status:** This folder currently contains only the **project skeleton** —
-> the directory layout, dependency manifest, env template, and Dockerfile. All
-> Python files are empty placeholders. The sections below describe exactly **what
-> each file must implement**.
+**Status: feature-complete.** 23 API routes, autonomous 30-second agent loop,
+live-verified against MongoDB Atlas, Redis, Gemini, Agent Builder, and a real
+Dynatrace MCP server. The React dashboard lives in the sibling
+`quotamind-frontend` repo/folder.
 
 ---
 
@@ -23,9 +23,9 @@ the dashboard in real time over SSE.
 | Validation | Pydantic v2 |
 | Database | MongoDB Atlas (async via Motor) |
 | Cache / event bus | Redis (counters + pub/sub) |
-| AI core | Gemini 2.5 Pro / Flash (`google-generativeai`) |
+| AI core | Gemini 2.5 Pro / Flash (`google-genai`) |
 | Agent orchestration | Google Cloud Agent Builder (Vertex AI / Dialogflow CX) |
-| Observability MCP | Dynatrace MCP Server (`httpx` / `mcp`) |
+| Observability MCP | Real `@dynatrace-oss/dynatrace-mcp-server` over stdio (reads) + Dynatrace REST API (writes/fallback) |
 | Real-time | Server-Sent Events (SSE) over Redis pub/sub |
 | Deploy | Google Cloud Run (Docker) |
 
@@ -85,59 +85,31 @@ quotamind-backend/
 
 ---
 
-## Files To Build (Implementation Checklist)
+## How It Works (the autonomous loop)
 
-### Bootstrap
-- [ ] **`main.py`** — create the `FastAPI` app, add CORS middleware (origins from `config.settings`),
-  register all five routers from `api/`, expose `GET /health` → `{"status": "ok"}`, and register the
-  `AgentOrchestrator` loop as a startup background task.
+Every `ORCHESTRATOR_INTERVAL_SECONDS` (default 30s), `agent/orchestrator.py` runs one cycle:
 
-### `config/`
-- [ ] **`settings.py`** — `Settings(BaseSettings)` reading every var in `.env.example`.
-- [ ] **`models.py`** — `MODEL_TIERS`, `COST_PER_1K_TOKENS`, and `PRIORITY_TO_MIN_TIER` dicts.
+1. **Collect signals** — quota forecast (burn rate + exhaustion ETA), budget status,
+   per-agent runaway analysis, and a live **Dynatrace observability briefing fetched
+   through the real Dynatrace MCP server** (`list_problems`), with REST fallback.
+2. **Reason** — the context bundle is sent to a **Google Cloud Agent Builder** playbook
+   (Gemini 2.5), which replies with structured `REASONING:` / `ACTIONS:` output.
+3. **Act** — `agent/agent_runner.py` parses the response into an `AgentDecision` and
+   executes the chosen tools: `reroute` (downgrade model tier), `compress` (prompt
+   compression), `throttle` / `pause` (runaway containment), `cache`, and `alert`.
+4. **Close the loop** — every mutating action is logged to Mongo as an
+   `OptimizationEvent`, streamed to the dashboard over SSE, and **pushed back into the
+   Dynatrace timeline** via event ingest, so QuotaMind's actions appear alongside the
+   anomalies that triggered them.
 
-### `models/` (Pydantic v2)
-- [ ] **`ai_request.py`** → `AIRequest`
-- [ ] **`optimization_event.py`** → `OptimizationEvent`
-- [ ] **`agent_log.py`** → `AgentLog`
-- [ ] **`cached_output.py`** → `CachedOutput`
+If Agent Builder is unreachable, a deterministic fallback policy still protects
+critical agents — the loop never dies on a single failed cycle.
 
-### `integrations/`
-- [ ] **`db.py`** — async Motor client; getters for `ai_requests`, `optimization_events`,
-  `agent_logs`, `cached_outputs`; index creation on `timestamp` / `model` / `priority`.
-- [ ] **`cache.py`** — Redis client; `get_cached`, `set_cached`, `increment_counter`,
-  and pub/sub helpers for the `quotamind:events` channel.
-- [ ] **`gemini_client.py`** — `GeminiClient` with `reason`, `compress_prompt`,
-  `classify_priority`, `generate_recommendation`; retry w/ exponential backoff; token logging.
-- [ ] **`dynatrace_mcp.py`** — `DynatraceMCPClient` with `get_metrics`, `get_active_problems`,
-  `get_latency_spike_events`, `push_optimization_event`.
-
-### `engines/`
-- [ ] **`prompt_compressor.py`** → `PromptCompressor.compress(...)`
-- [ ] **`duplicate_detector.py`** → `DuplicateDetector` (hash, check, cache, get)
-- [ ] **`traffic_router.py`** → `TrafficRouter.get_optimal_model / reroute_agent`
-- [ ] **`runaway_detector.py`** → `RunawayDetector.analyze_agent`
-- [ ] **`budget_allocator.py`** → `BudgetAllocator.check_budget_status / enforce_budget_limits`
-- [ ] **`quota_forecaster.py`** → `QuotaForecaster.forecast_exhaustion`
-- [ ] **`recommendations_engine.py`** → `RecommendationsEngine.generate_daily_report`
-
-### `agent/`
-- [ ] **`agent_runner.py`** — init Agent Builder client, run a session with context, parse tool calls
-  into structured `AgentDecision` objects.
-- [ ] **`orchestrator.py`** — `AgentOrchestrator.run_cycle()`: collect metrics → pull Dynatrace signals →
-  run runaway/forecast/budget checks → build context → call Agent Builder → execute tool calls →
-  log to Mongo → publish events to Redis. Runs every `ORCHESTRATOR_INTERVAL_SECONDS`.
-
-### `api/`
-- [ ] **`router_requests.py`** — ingestion endpoint (cost calc, dup check, Mongo write, Redis counters, publish).
-- [ ] **`router_metrics.py`** — aggregated metrics, cache stats, savings.
-- [ ] **`router_agent.py`** — agent status/health, forecast, recommendations, budget, manual pause/config.
-- [ ] **`router_events.py`** — SSE endpoint subscribing to `quotamind:events`.
-- [ ] **`router_simulator.py`** — the five demo crisis-trigger endpoints.
-
-### `simulator/`
-- [ ] **`workload_simulator.py`** — generate realistic traffic for 4 agents (support-bot-1, summarizer-1,
-  analytics-agent-1, workflow-agent-1), inject ~15% duplicate hashes, and execute crisis scenarios.
+The **workload simulator** (`simulator/workload_simulator.py`) provides demo traffic:
+four synthetic AI agents with distinct personalities (a critical support bot, a
+Pro-overusing summarizer, a low-priority analytics agent, a bursty workflow agent)
+plus one-click crisis scenarios — token spike, runaway loop, budget overflow, and a
+real Dynatrace anomaly event.
 
 ---
 
@@ -160,11 +132,13 @@ quotamind-backend/
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET  | `/health` | Liveness check → `{"status": "ok"}` |
+| GET  | `/health` | Per-dependency status → `{"app","mongodb","redis","dynatrace": "mcp\|rest\|unconfigured"}` |
 | POST | `/api/requests/ingest` | Ingest one AI request (from simulator) |
 | GET  | `/api/requests/summary` | Aggregated request stats |
+| GET  | `/api/requests/live` | Most recent requests feed |
 | GET  | `/api/metrics/summary` | Tokens / cost / quota |
 | GET  | `/api/metrics/cache-stats` | Cache hit rate + savings |
+| GET  | `/api/metrics/savings` | Savings by optimization type |
 | GET  | `/api/forecast` | Quota exhaustion forecast |
 | GET  | `/api/recommendations` | Gemini optimization insights |
 | GET  | `/api/agents/status` | All agent statuses + models |
@@ -173,10 +147,13 @@ quotamind-backend/
 | GET  | `/api/budget/status` | Budget breakdown + projections |
 | POST | `/api/config/budget` | Update budget config |
 | GET  | `/api/events/stream` | SSE event stream (frontend) |
+| GET  | `/api/simulator/status` | Simulator state |
+| POST | `/api/simulator/start` | Start continuous demo traffic |
+| POST | `/api/simulator/stop` | Stop demo traffic |
 | POST | `/api/simulator/spike` | Demo: token spike |
 | POST | `/api/simulator/runaway` | Demo: runaway agent |
 | POST | `/api/simulator/budget-overflow` | Demo: budget overflow |
-| POST | `/api/simulator/dynatrace-anomaly` | Demo: Dynatrace anomaly |
+| POST | `/api/simulator/dynatrace-anomaly` | Demo: Dynatrace anomaly (real event push) |
 | POST | `/api/simulator/reset` | Demo: reset to baseline |
 
 ---
@@ -194,20 +171,26 @@ pip install -r requirements.txt
 # 3. Configure environment
 cp .env.example .env        # then fill in your keys/URIs
 
-# 4. Run the server (hot reload)
+# 4. Run the server (hot reload). Tip: ORCHESTRATOR_AUTOSTART=false
+#    boots the API without the autonomous agent loop.
 uvicorn main:app --reload --port 8080
 
 # 5. Verify
-curl http://localhost:8080/health   # → {"status": "ok"}
+curl http://localhost:8080/health
+# → {"app":"ok","mongodb":"ok","redis":"ok","dynatrace":"mcp"}
 ```
 
 You will also need: a MongoDB Atlas cluster, a Redis instance
 (`docker run -p 6379:6379 redis`), a Gemini API key, a Google Cloud project with
-Agent Builder enabled, and a Dynatrace trial token.
+Agent Builder enabled, a Dynatrace API token (REST), and a Dynatrace platform
+token (real MCP server — launched automatically via `npx`, requires Node.js).
 
 ---
 
 ## Deployment (Google Cloud Run)
+
+The image bundles **Node.js + the pinned Dynatrace MCP server package**, so the
+real MCP transport works in Cloud Run (no silent REST fallback).
 
 ```bash
 gcloud builds submit --tag gcr.io/PROJECT_ID/quotamind-backend
@@ -217,7 +200,14 @@ gcloud run deploy quotamind-backend \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars GEMINI_API_KEY=...,MONGODB_URI=...,REDIS_URL=...
+  --set-env-vars GEMINI_API_KEY=...,MONGODB_URI=...,REDIS_URL=...,DT_PLATFORM_TOKEN=...,DT_ENVIRONMENT=...,DYNATRACE_ENV_URL=...,DYNATRACE_API_TOKEN=...
 ```
 
-The resulting Cloud Run URL is the backend host the frontend's `NEXT_PUBLIC_API_URL` points to.
+The resulting Cloud Run URL is the backend host the frontend's `VITE_API_BASE_URL`
+points to.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

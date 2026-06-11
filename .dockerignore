@@ -1,0 +1,26 @@
+# Secrets — never bake into the image (Cloud Run injects env vars instead)
+.env
+.env.local
+service-account.json
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Git / IDE / OS
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+
+# Logs / coverage / tests
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
